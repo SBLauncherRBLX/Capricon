@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Anthropic" Version="13.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Vector model traced from the reference picture by tools/trace/trace_reference.py -->
+    <EmbeddedResource Include="Avatar\capri_trace.json" LogicalName="capri_trace.json" />
+  </ItemGroup>
+
+</Project>

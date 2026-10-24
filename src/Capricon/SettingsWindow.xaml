@@ -1,0 +1,109 @@
+<Window x:Class="Capricon.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Капри — настройки"
+        Width="440" SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="{StaticResource Ink}"
+        Foreground="White"
+        FontFamily="Segoe UI" FontSize="13">
+
+    <Window.Resources>
+        <Style TargetType="TextBlock" x:Key="Head">
+            <Setter Property="FontFamily" Value="Segoe UI Black" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource Green}" />
+            <Setter Property="Margin" Value="0,14,0,4" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Margin" Value="0,3" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource Panel}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource Pink}" />
+            <Setter Property="CaretBrush" Value="{StaticResource Green}" />
+            <Setter Property="Padding" Value="5,4" />
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="{StaticResource Panel}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource Pink}" />
+            <Setter Property="CaretBrush" Value="{StaticResource Green}" />
+            <Setter Property="Padding" Value="5,4" />
+        </Style>
+    </Window.Resources>
+
+    <Border BorderBrush="{StaticResource Pink}" BorderThickness="0,4,0,0" Padding="20,10,20,18">
+        <StackPanel>
+            <TextBlock Text="КАПРИ" FontFamily="Segoe UI Black" FontSize="26" Foreground="{StaticResource Pink}" />
+            <TextBlock Text="Цифровая сущность на твоём рабочем столе" Foreground="#AAFFFFFF" />
+
+            <TextBlock Style="{StaticResource Head}" Text="МОЗГИ (CLAUDE API)" />
+            <TextBlock TextWrapping="Wrap" Foreground="#AAFFFFFF" Margin="0,0,0,6"
+                       Text="Без ключа Капри понимает базовые команды. С ключом — болтает о чём угодно и сама решает, что сделать на ПК. Ключ хранится зашифрованным (Windows DPAPI)." />
+            <PasswordBox x:Name="ApiKey" />
+            <Grid Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="120" />
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="Model" IsEditable="True">
+                    <ComboBoxItem Content="claude-opus-5-5" />
+                    <ComboBoxItem Content="claude-sonnet-5-5" />
+                    <ComboBoxItem Content="claude-haiku-5-5" />
+                </ComboBox>
+                <ComboBox x:Name="Effort" Grid.Column="2" ToolTip="Насколько глубоко думать: low — быстро и дёшево">
+                    <ComboBoxItem Content="low" />
+                    <ComboBoxItem Content="medium" />
+                    <ComboBoxItem Content="high" />
+                </ComboBox>
+            </Grid>
+
+            <TextBlock Style="{StaticResource Head}" Text="ГОЛОС" />
+            <ComboBox x:Name="VoiceName" />
+            <Grid Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition />
+                    <RowDefinition />
+                </Grid.RowDefinitions>
+                <TextBlock Text="Высота" VerticalAlignment="Center" />
+                <Slider x:Name="Pitch" Grid.Column="1" Minimum="-20" Maximum="60" TickFrequency="5" IsSnapToTickEnabled="True" />
+                <TextBlock Grid.Row="1" Text="Скорость" VerticalAlignment="Center" />
+                <Slider x:Name="Rate" Grid.Row="1" Grid.Column="1" Minimum="-5" Maximum="5" TickFrequency="1" IsSnapToTickEnabled="True" />
+            </Grid>
+            <CheckBox x:Name="Muted" Content="Без голоса (только пузыри с текстом)" />
+
+            <TextBlock Style="{StaticResource Head}" Text="ВНЕШНИЙ ВИД" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Размер" VerticalAlignment="Center" />
+                <Slider x:Name="Scale" Grid.Column="1" Minimum="0.4" Maximum="2" TickFrequency="0.05" IsSnapToTickEnabled="True" />
+            </Grid>
+            <CheckBox x:Name="FollowCursor" Content="Следит взглядом за курсором" />
+
+            <TextBlock Style="{StaticResource Head}" Text="РЕАКЦИИ" />
+            <CheckBox x:Name="ReactClipboard" Content="Комментирует, что ты скопировал" />
+            <CheckBox x:Name="ReactIdle" Content="Засыпает, когда тебя нет, и радуется возвращению" />
+            <CheckBox x:Name="ReactSystem" Content="Следит за нагрузкой и батареей" />
+            <CheckBox x:Name="Chatter" Content="Иногда болтает сама" />
+            <CheckBox x:Name="Autostart" Content="Запускать вместе с Windows" />
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                <Button Content="Папка заметок" Padding="12,5" Margin="0,0,8,0" Click="OpenNotes_Click" />
+                <Button Content="Сохранить" Padding="18,5" IsDefault="True" Click="Save_Click"
+                        Background="{StaticResource Pink}" Foreground="White" BorderBrush="{StaticResource Lavender}" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>
