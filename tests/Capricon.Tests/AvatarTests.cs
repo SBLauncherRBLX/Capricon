@@ -11,7 +11,6 @@ public class AvatarTests
     {
         var model = CapriModel.Load();
         Assert.True(model.Shapes.Count >= 15);
-        Assert.NotEmpty(model.Eyes);
         Assert.NotEmpty(model.Mouth);
         Assert.NotEmpty(model.Visor);
 

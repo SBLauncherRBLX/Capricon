@@ -51,6 +51,9 @@ public sealed class CapriAnimator
 
     public Mood Mood { get; set; } = Mood.Idle;
 
+    /// <summary>How much bigger than in the reference art the face is drawn (readability at pet size).</summary>
+    public double FaceScale { get; set; } = 1.45;
+
     /// <summary>Voice loudness 0..1 (from TTS visemes). Smoothed internally.</summary>
     public double TalkLevel { get; set; }
 
@@ -164,6 +167,12 @@ public sealed class CapriAnimator
                           _ => 0,
                       };
             if (LookAt is { } look) p.Angle += Math.Clamp((look.X - CapriModel.HairX) / 50, -5, 5);
+            return p;
+        });
+
+        Set("face", p =>
+        {
+            p.ScaleX = p.ScaleY = FaceScale;
             return p;
         });
 
@@ -289,13 +298,8 @@ public sealed class CapriAnimator
     void AddFace(Frame frame, double t)
     {
         var (eyes, mouth) = Expression();
-        var head = _world[_model.BoneIndex("head")];
+        var face = _world[_model.BoneIndex("face")];
         var visorColor = Mood switch { Mood.Hack => CapriModel.Red, Mood.Love => "#FF7AD9", _ => CapriModel.Green };
-        var traced = eyes == "happy" && visorColor == CapriModel.Green;
-
-        var d = 0;
-        foreach (var detail in _model.FaceDetails)
-            frame.Items.Add(new DrawItem($"facedetail{d++}", CapriModel.Ink, 1) { Rings = SkinRings(detail, t) });
 
         if (visorColor != CapriModel.Green)
         {
@@ -304,37 +308,31 @@ public sealed class CapriAnimator
                 frame.Items.Add(new DrawItem($"visor{v++}", visorColor, 1) { Rings = SkinRings(piece, t) });
         }
 
-        if (traced)
+        var look = LookAt is { } la
+            ? (Math.Clamp((la.X - CapriModel.FaceX) / 90, -1.3, 1.3), Math.Clamp((la.Y - CapriModel.FaceY) / 110, -1, 1))
+            : (0.0, 0.0);
+        if (Mood == Mood.Think) look = (1.3, -1.2);
+
+        foreach (var (cx, cy, near) in new[] { (CapriModel.EyeLX, CapriModel.EyeLY, false), (CapriModel.EyeRX, CapriModel.EyeRY, true) })
         {
-            var e = 0;
-            foreach (var eye in _model.Eyes)
-                frame.Items.Add(new DrawItem($"eye{e++}", CapriModel.Ink, 1) { Rings = SkinRings(eye, t) });
-        }
-        else
-        {
-            var (path, fill, stroke) = EyeShape(eyes);
-            foreach (var (cx, cy, right) in new[] { (CapriModel.EyeLX, CapriModel.EyeLY, false), (CapriModel.EyeRX, CapriModel.EyeRY, true) })
+            // Shapes are drawn for the near (right) eye with its outer corner towards +x; the far
+            // eye is mirrored and foreshortened by the three-quarter turn of the head.
+            var place = Mat.Rotate(CapriModel.FaceTilt) * Mat.Translate(cx, cy) * face;
+            var shape = near ? Mat.Identity : Mat.Scale(-0.74, 0.96);
+            var light = near ? Mat.Identity : Mat.Scale(0.74, 0.96);
+            var n = 0;
+            foreach (var layer in EyeLayers(eyes))
             {
-                var look = LookAt is { } la ? (Math.Clamp((la.X - cx) / 80, -1.5, 1.5), Math.Clamp((la.Y - cy) / 100, -1, 1)) : (0.0, 0.0);
-                if (Mood == Mood.Think) look = (1.5, -1.5);
-                // Shapes are drawn for the right eye (outer corner +x); the far eye is mirrored and foreshortened.
-                var local = (right ? Mat.Identity : Mat.Scale(-0.72, 0.95))
-                            * Mat.Rotate(CapriModel.FaceTilt)
-                            * Mat.Translate(cx + look.Item1, cy + look.Item2)
-                            * head;
-                frame.Items.Add(new DrawItem($"eyes.{eyes}.{(right ? "r" : "l")}", fill, 1)
+                // Highlights are never mirrored so both eyes catch the light from the same side.
+                var m = layer.Highlight ? light : shape;
+                if (layer.Pupil) m *= Mat.Translate(look.Item1, look.Item2);
+                frame.Items.Add(new DrawItem($"eye.{eyes}.{(near ? "r" : "l")}{n++}", layer.Fill, 1)
                 {
-                    Path = path,
-                    Transform = local,
-                    Stroke = stroke,
-                    StrokeWidth = stroke is null ? 0 : fill == Fills.None ? 2 : 1.2,
+                    Path = layer.Path,
+                    Transform = m * place,
+                    Stroke = layer.Stroke,
+                    StrokeWidth = layer.Width,
                 });
-                if (eyes is "open" or "round")
-                    frame.Items.Add(new DrawItem($"glint.{(right ? "r" : "l")}", CapriModel.White, 1)
-                    {
-                        Path = "M 0.6,-3.2 L 3,-3.2 L 3,-0.8 L 0.6,-0.8 Z",
-                        Transform = local,
-                    });
             }
         }
 
@@ -350,7 +348,7 @@ public sealed class CapriAnimator
             frame.Items.Add(new DrawItem($"mouth.{mouth}", fill, 1)
             {
                 Path = path,
-                Transform = Mat.Rotate(CapriModel.FaceTilt) * Mat.Translate(CapriModel.MouthX, CapriModel.MouthY) * head,
+                Transform = Mat.Rotate(CapriModel.FaceTilt) * Mat.Translate(CapriModel.MouthX, CapriModel.MouthY) * face,
                 Stroke = stroke,
                 StrokeWidth = stroke is null ? 0 : mouth == "teeth" ? 1 : 2.3,
             });
@@ -372,24 +370,80 @@ public sealed class CapriAnimator
             Mood.Love => ("heart", "grin"),
             _ => ("open", "grin"),
         };
-        if (_time < _blinkUntil && eyes is "open" or "smug" or "round" or "slit") eyes = "closed";
+        if (_time < _blinkUntil && eyes is "open" or "smug" or "round" or "sad" or "angry") eyes = "closed";
         if (_talk > 0.04 && mouth is not ("grin" or "o" or "teeth")) mouth = "talk";
         return (eyes, mouth);
     }
 
-    /// <summary>Eye drawings for the near (right) eye, outer corner towards +x, lashes included.</summary>
-    static (string Path, string Fill, string? Stroke) EyeShape(string eyes) => eyes switch
+    readonly record struct EyeLayer(string Path, string Fill, string? Stroke = null, double Width = 0, bool Pupil = false, bool Highlight = false);
+
+    const string Ink = CapriModel.Ink;
+    const string White = CapriModel.White;
+
+    // Bold anime eyes for the near eye: white almond, big glossy iris, thick upper lid with a
+    // flicked wing and a lash. All in a local frame centred on the eye, ~16 units wide.
+    static readonly Dictionary<string, EyeLayer[]> Eyes = new()
     {
-        "open" => ("M -7,1 Q 0,-6.5 7,-1 Q 0,5 -7,1 Z M 6,-1.5 L 10,-4.5 M 3.5,-4 L 5.5,-7.5", CapriModel.Ink, CapriModel.Ink),
-        "closed" => ("M -7,-0.5 Q 0,4.5 7,-0.5 M 6.2,0.4 L 9.8,-2.2", Fills.None, CapriModel.Ink),
-        "smug" => ("M -7,-1.5 L 7.5,-2.6 Q 0,4.8 -7,-1.5 Z M 7,-2.6 L 10.5,-5.2", CapriModel.Ink, CapriModel.Ink),
-        "round" => ("M -5.2,0 A 5.2,5.2 0 1 1 5.2,0 A 5.2,5.2 0 1 1 -5.2,0 Z M 4.6,-2.6 L 8.4,-5.4", CapriModel.Ink, CapriModel.Ink),
-        "sad" => ("M -7,-5.2 L 6.5,-1.6 M -6,2 Q 0,5.4 6.5,1.4", Fills.None, CapriModel.Ink),
-        "angry" => ("M -7.5,-0.8 L 7.5,-6.4 M -5.5,2.8 L 6.5,1.2", Fills.None, CapriModel.Ink),
-        "slit" => ("M -8,0.6 L 8.5,-2.6 L 7.5,1.8 L -7,2.8 Z", CapriModel.White, null),
-        "heart" => ("M 0,5.6 L -6.6,-0.6 A 3.3,3.3 0 0 1 0,-3.8 A 3.3,3.3 0 0 1 6.6,-0.6 Z", CapriModel.Red, null),
-        _ => ("M -7,2 L 0,-4 L 7,1.5 M 6.2,1 L 9.6,-2", Fills.None, CapriModel.Ink),
+        ["open"] =
+        [
+            new("M -7.6,0.6 Q -1,-7.2 7.6,-2.6 Q 1,7.2 -7.6,0.6 Z", White),
+            new("M -2.8,-0.6 A 3.4,3.9 0 1 1 4,-0.6 A 3.4,3.9 0 1 1 -2.8,-0.6 Z", Ink, Pupil: true),
+            new("M 0.6,-2.4 A 1.4,1.4 0 1 1 3.4,-2.4 A 1.4,1.4 0 1 1 0.6,-2.4 Z", White, Pupil: true, Highlight: true),
+            new("M -1.4,1.4 A 0.6,0.6 0 1 1 -0.2,1.4 A 0.6,0.6 0 1 1 -1.4,1.4 Z", White, Pupil: true, Highlight: true),
+            new("M -5,3.2 Q 0.5,4.8 6,1.4", Fills.None, Ink, 1.1),
+            new("M -8.2,0.9 Q -1,-7.8 8,-2.8 M 7.4,-2.6 L 10.8,-5.6", Fills.None, Ink, 2.8),
+            new("M 4.4,-4.6 L 6.4,-8.4", Fills.None, Ink, 1.5),
+        ],
+        ["closed"] =
+        [
+            new("M -8,0 Q 0,5.2 8,-0.6 M 7.4,-0.3 L 10.8,-2.8", Fills.None, Ink, 2.8),
+            new("M 2.6,3.4 L 3.4,5.6 M -1,3.8 L -1.2,6", Fills.None, Ink, 1.2),
+        ],
+        ["happy"] =
+        [
+            new("M -8.2,3.2 Q -0.6,-8.4 8,2.2 M 7.2,1.8 L 11,-1.2", Fills.None, Ink, 3),
+            new("M 4.2,-2.8 L 6.4,-6.4", Fills.None, Ink, 1.6),
+        ],
+        ["smug"] =
+        [
+            new("M -7.6,-0.6 L 7.6,-2.8 Q 1,6 -7.6,-0.6 Z", White),
+            new("M -1.4,0.6 A 2.9,2.9 0 1 1 4.4,0.6 A 2.9,2.9 0 1 1 -1.4,0.6 Z", Ink, Pupil: true),
+            new("M 1.6,-0.4 A 0.9,0.9 0 1 1 3.4,-0.4 A 0.9,0.9 0 1 1 1.6,-0.4 Z", White, Pupil: true, Highlight: true),
+            new("M -8.4,-0.4 L 8.2,-3 M 7.6,-2.9 L 11,-5.4", Fills.None, Ink, 3),
+        ],
+        ["round"] =
+        [
+            new("M -6,0 A 6,6 0 1 1 6,0 A 6,6 0 1 1 -6,0 Z", White, Ink, 1),
+            new("M -1.8,0.4 A 2.2,2.2 0 1 1 2.6,0.4 A 2.2,2.2 0 1 1 -1.8,0.4 Z", Ink, Pupil: true),
+            new("M -6.8,-2.4 Q 0,-9.6 6.8,-3.4 M 6.4,-3.4 L 9.8,-6.6", Fills.None, Ink, 2.4),
+        ],
+        ["sad"] =
+        [
+            new("M -7.6,-1.6 Q 0,-5.8 7.6,1.4 Q 0,7.2 -7.6,-1.6 Z", White),
+            new("M -3,0.8 A 3.3,3.7 0 1 1 3.6,0.8 A 3.3,3.7 0 1 1 -3,0.8 Z", Ink, Pupil: true),
+            new("M 0.2,-1 A 1.5,1.5 0 1 1 3.2,-1 A 1.5,1.5 0 1 1 0.2,-1 Z", White, Pupil: true, Highlight: true),
+            new("M -1.8,2.4 A 0.8,0.8 0 1 1 -0.2,2.4 A 0.8,0.8 0 1 1 -1.8,2.4 Z", White, Pupil: true, Highlight: true),
+            new("M -8.2,-1.8 Q 0,-6.4 8.2,1.2 M 7.6,1 L 10.6,3", Fills.None, Ink, 2.6),
+        ],
+        ["angry"] =
+        [
+            new("M -7.6,0.8 L 7.6,-4 Q 2,5.6 -7.6,0.8 Z", White),
+            new("M -1.6,0.2 A 2.9,3.1 0 1 1 4.2,0.2 A 2.9,3.1 0 1 1 -1.6,0.2 Z", Ink, Pupil: true),
+            new("M -8.4,0.8 L 8.4,-4.6 M 7.8,-4.4 L 10.8,-6.6", Fills.None, Ink, 3.2),
+        ],
+        ["slit"] =
+        [
+            new("M -8.6,1 L 8.6,-3.2 L 7.6,1.6 L -7.6,3.4 Z", White),
+            new("M -8.8,0.4 L 9,-3.8 M 8.4,-3.6 L 11.2,-5.8", Fills.None, Ink, 1.8),
+        ],
+        ["heart"] =
+        [
+            new("M 0,6.4 L -7.6,-0.8 A 3.8,3.8 0 0 1 0,-4.6 A 3.8,3.8 0 0 1 7.6,-0.8 Z", CapriModel.Red, Ink, 1),
+            new("M -4.8,-1.4 A 1.2,1.2 0 1 1 -2.4,-1.4 A 1.2,1.2 0 1 1 -4.8,-1.4 Z", White, Highlight: true),
+        ],
     };
+
+    static EyeLayer[] EyeLayers(string eyes) => Eyes.TryGetValue(eyes, out var layers) ? layers : Eyes["open"];
 
     /// <summary>Mouth drawings in a local frame centred on the traced grin.</summary>
     static (string Path, string Fill, string? Stroke) MouthShape(string mouth) => mouth switch

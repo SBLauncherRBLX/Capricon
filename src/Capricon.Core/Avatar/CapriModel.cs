@@ -23,10 +23,16 @@ public sealed class CapriModel
     public const double HairX = 233, HairY = 150;
 
     // Face landmarks of the traced head (rest pose).
-    // The head is turned three-quarters: the left eye is narrower and sits on its own mask piece.
-    public const double EyeLX = 211, EyeLY = 155, EyeRX = 238.5, EyeRY = 152;
+    // The head is turned three-quarters: the far (left) eye is narrower and sits near the mask's edge.
+    public const double EyeLX = 216.5, EyeLY = 156.5, EyeRX = 239, EyeRY = 152;
     public const double MouthX = 225.5, MouthY = 175.5, MouthTopY = 167;
     public const double FaceTilt = -8;
+
+    /// <summary>
+    /// The face area (head silhouette, mask, eyes, mouth) rides its own bone so it can be drawn
+    /// bigger than in the reference: at desktop-pet size the original head is only ~45 px.
+    /// </summary>
+    public const double FaceX = 228, FaceY = 163, FaceRadiusX = 36, FaceRadiusY = 42;
 
     public static readonly IReadOnlyList<Bone> Bones =
     [
@@ -35,7 +41,8 @@ public sealed class CapriModel
         new("torso", "root", 150, 330, 178, 280),
         new("chest", "torso", 178, 280, 219, 195),
         new("head", "chest", 219, 192, 232, 135),
-        new("jaw", "head", MouthX, MouthTopY, MouthX, MouthTopY + 18),
+        new("face", "head", 224, 184, 228, 140),
+        new("jaw", "face", MouthX, MouthTopY, MouthX, MouthTopY + 18),
         new("armB", "chest", 238, 205, 290, 158),
         new("armB2", "armB", 290, 158, 340, 40),
         new("handB", "armB2", 340, 40, 360, 15),
@@ -54,14 +61,10 @@ public sealed class CapriModel
     /// <summary>Body layers back to front.</summary>
     public IReadOnlyList<SkinnedShape> Shapes { get; }
 
-    /// <summary>Green mask pieces on the face, redrawn over the traced eyes for other expressions.</summary>
+    /// <summary>Green mask pieces on the face, repainted when the mask changes colour.</summary>
     public IReadOnlyList<SkinnedShape> Visor { get; }
 
-    /// <summary>Traced happy "^ ^" eyes with lashes, and the traced open grin.</summary>
-    public IReadOnlyList<SkinnedShape> Eyes { get; }
-
-    /// <summary>Small traced bits of the mask's black edge, drawn with every expression.</summary>
-    public IReadOnlyList<SkinnedShape> FaceDetails { get; }
+    /// <summary>The traced open grin.</summary>
     public IReadOnlyList<SkinnedShape> Mouth { get; }
 
     /// <summary>White spray specks on the mane.</summary>
@@ -93,9 +96,7 @@ public sealed class CapriModel
         }
         Shapes = shapes;
         Visor = visor;
-        var face = data.Eyes.Select(r => Skin(r, Ink, BindHead, ghost: false)).ToList();
-        Eyes = face.Where(IsEye).ToList();
-        FaceDetails = face.Where(f => !IsEye(f)).ToList();
+        // The traced "^ ^" eyes are too thin to read at pet size; the animator draws its own.
         Mouth = data.Mouth.Select(r => Skin(r, White, BindJaw, ghost: false)).ToList();
 
         var pts = new double[data.Specks.Length * 2];
@@ -114,20 +115,11 @@ public sealed class CapriModel
         return new CapriModel(data);
     }
 
-    static bool IsEye(SkinnedShape s)
-    {
-        var xs = s.Rings[0].Where((_, i) => i % 2 == 0).ToArray();
-        var ys = s.Rings[0].Where((_, i) => i % 2 == 1).ToArray();
-        return xs.Max() - xs.Min() > 8 && ys.Max() - ys.Min() > 8 && xs.Max() - xs.Min() > (ys.Max() - ys.Min()) * 0.5;
-    }
-
     // ---------------------------------------------------------------- binding
 
     /// <summary>Pink shapes up top that are not the skin panels on the torso are mane.</summary>
     static bool IsHair(double x, double y) =>
         y < 300 && SegmentDistance(x, y, Bones[3]) > 34 && SegmentDistance(x, y, Bones[2]) > 30;
-
-    Weights BindHead(double x, double y) => Pin(x, y, Weights.Single(_boneIndex["head"]));
 
     Weights BindJaw(double x, double y) => Weights.Single(_boneIndex["jaw"]);
 
@@ -146,7 +138,17 @@ public sealed class CapriModel
     static readonly string[] BodyBones =
         ["torso", "chest", "head", "armB", "armB2", "armF", "armF2", "handF", "legF", "legF2", "legB", "legB2"];
 
-    Weights BindBody(double x, double y) => Pin(x, y, Soft(x, y, BodyBones));
+    Weights BindBody(double x, double y)
+    {
+        // Inside the face oval everything follows the (enlarged) face; it fades out towards the neck.
+        var dx = (x - FaceX) / FaceRadiusX;
+        var dy = (y - FaceY) / FaceRadiusY;
+        var w = Soft(x, y, BodyBones);
+        // Only what already belongs to the head: the raised arm's sleeve right next to it must not grow.
+        var face = Math.Clamp((1.3 - Math.Sqrt(dx * dx + dy * dy)) / 0.35, 0, 1) * w.Share(_boneIndex["head"]);
+        if (face > 0) w = w.Scale(1 - face).Add(Weights.Single(_boneIndex["face"]).Scale(face)).Normalized();
+        return Pin(x, y, w);
+    }
 
     /// <summary>Nearest bones win, with a soft blend across joints.</summary>
     Weights Soft(double x, double y, string[] candidates)
@@ -240,6 +242,9 @@ public readonly record struct Weights
         while (all.Count < 3) all.Add((0, 0));
         return new Weights { B0 = all[0].B, W0 = all[0].W, B1 = all[1].B, W1 = all[1].W, B2 = all[2].B, W2 = all[2].W, Flutter = Math.Max(Flutter, o.Flutter) };
     }
+
+    public double Share(int bone) =>
+        (B0 == bone ? W0 : 0) + (B1 == bone ? W1 : 0) + (B2 == bone ? W2 : 0);
 
     public Weights Normalized()
     {
